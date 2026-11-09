@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f2328">
+<title>Бро</title>
+<style>
+  :root { --фон: #f6f7f9; --лист: #fff; --текст: #1f2328; --тихо: #6b7280; --линия: #e3e6ea; --акцент: #2f6feb; }
+  @media (prefers-color-scheme: dark) { :root { --фон: #0f1115; --лист: #171a21; --текст: #e6e8eb; --тихо: #9aa3ad; --линия: #262b33; --акцент: #5b8def; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--фон); color: var(--текст); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; background: var(--лист); border-bottom: 1px solid var(--линия); display: flex; gap: 4px; padding: 8px 12px; }
+  header button { flex: 1; padding: 10px 6px; border: 0; border-radius: 10px; background: transparent; color: var(--тихо); font: inherit; }
+  header button.да { background: var(--фон); color: var(--текст); font-weight: 600; }
+  main { padding: 12px 16px 96px; max-width: 760px; margin: 0 auto; }
+  .строка { display: flex; align-items: center; gap: 10px; padding: 12px; background: var(--лист); border: 1px solid var(--линия); border-radius: 12px; margin-bottom: 8px; }
+  .строка .имя { flex: 1; overflow-wrap: anywhere; }
+  .тихо { color: var(--тихо); font-size: 14px; }
+  button.кнопка { padding: 10px 14px; border: 0; border-radius: 10px; background: var(--акцент); color: #fff; font: inherit; }
+  button.вторая { padding: 8px 12px; border: 1px solid var(--линия); border-radius: 10px; background: var(--лист); color: var(--текст); font: inherit; }
+  input, textarea { width: 100%; padding: 12px; border: 1px solid var(--линия); border-radius: 10px; background: var(--лист); color: var(--текст); font: inherit; }
+  textarea { min-height: 160px; resize: vertical; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--лист); border: 1px solid var(--линия); border-radius: 12px; padding: 12px; font: 14px/1.5 ui-monospace, Menlo, monospace; }
+  .метки { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .метка { padding: 4px 10px; border-radius: 999px; background: var(--лист); border: 1px solid var(--линия); font-size: 14px; }
+  .ошибка { color: #d1242f; }
+  label { display: block; margin: 12px 0 6px; }
+</style>
+</head>
+<body>
+<header>
+  <button data-экран="вольт">Вольт</button>
+  <button data-экран="записка">Записка</button>
+  <button data-экран="ответы">Ответы</button>
+  <button data-экран="вход">Вход</button>
+</header>
+<main id="экран"></main>
+<script type="module">
+import { НАСТРОЙКИ, клиент, имя_записки, текст_записки, пары } from './telefon.mjs'
+
+const хранить = { взять (к) { try { return localStorage.getItem(к) } catch { return null } }, положить (к, з) { try { localStorage.setItem(к, з) } catch {} } }
+const сост = { экран: 'вольт', путь: '', файлы: JSON.parse(хранить.взять('бро.файлы') ?? '[]'), работа: '', слова: хранить.взять('бро.черновик') ?? '' }
+const корень = document.getElementById('экран')
+const токен = () => хранить.взять('бро.токен') ?? ''
+const кл = () => клиент({ токен: токен() })
+const э = (тег, свойства = {}, ...дети) => { const у = Object.assign(document.createElement(тег), свойства); у.append(...дети.filter((д) => д !== null)); return у }
+const ошибка = (о) => корень.append(э('p', { className: 'ошибка', textContent: о?.message ?? String(о) }))
+const запомнить = () => { хранить.положить('бро.файлы', JSON.stringify(сост.файлы)); хранить.положить('бро.черновик', сост.слова) }
+
+async function вольт () {
+  корень.append(э('p', { className: 'тихо', textContent: `Вольт / ${сост.путь}` }))
+  if (сост.путь) корень.append(э('div', { className: 'строка', onclick: () => { сост.путь = сост.путь.split('/').slice(0, -1).join('/'); показать() } }, э('span', { className: 'имя', textContent: '← назад' })))
+  for (const п of await кл().список(НАСТРОЙКИ.вольт, сост.путь, НАСТРОЙКИ.ветка)) {
+    корень.append(э('div', { className: 'строка', onclick: () => { if (п.папка) { сост.путь = п.путь; показать() } else открыть(п.путь) } },
+      э('span', { textContent: п.папка ? '📁' : '📄' }), э('span', { className: 'имя', textContent: п.имя })))
+  }
+}
+
+async function открыть (путь) {
+  корень.replaceChildren(э('p', { className: 'тихо', textContent: путь }))
+  корень.append(э('div', { className: 'метки' },
+    э('button', { className: 'вторая', textContent: '← к папке', onclick: () => показать() }),
+    э('button', { className: 'кнопка', textContent: '+ в записку', onclick: () => { if (!сост.файлы.includes(путь)) сост.файлы.push(путь); запомнить(); сост.экран = 'записка'; показать() } })))
+  try { корень.append(э('pre', { textContent: await кл().файл(НАСТРОЙКИ.вольт, путь, НАСТРОЙКИ.ветка) })) } catch (о) { ошибка(о) }
+}
+
+function записка () {
+  const поле = э('textarea', { placeholder: 'Мысль, задача или правка — своими словами', value: сост.слова, oninput: (с) => { сост.слова = с.target.value; запомнить() } })
+  const работа = э('input', { placeholder: 'номер работы, если продолжаешь (по желанию)', value: сост.работа, oninput: (с) => { сост.работа = с.target.value } })
+  const метки = э('div', { className: 'метки' }, ...сост.файлы.map((ф) => э('span', { className: 'метка', textContent: `${ф} ✕`, onclick: () => { сост.файлы = сост.файлы.filter((х) => х !== ф); запомнить(); показать() } })))
+  const итог = э('p', { className: 'тихо' })
+  const отправить = э('button', { className: 'кнопка', textContent: 'Отправить на компьютер', onclick: async () => {
+    if (!сост.слова.trim()) { итог.textContent = 'напиши слова'; return }
+    отправить.disabled = true
+    const имя = имя_записки()
+    try {
+      await кл().записать(НАСТРОЙКИ.дом, `${НАСТРОЙКИ.вход}/${имя}`, текст_записки({ работа: сост.работа, слова: сост.слова, файлы: сост.файлы }), НАСТРОЙКИ.ветка, `телефон: записка ${имя}`)
+      сост.слова = ''; сост.файлы = []; сост.работа = ''; запомнить()
+      итог.textContent = `Ушло: ${имя}. Ответ появится в «Ответах», когда компьютер её заберёт (включён — около минуты).`
+      поле.value = ''; метки.replaceChildren()
+    } catch (о) { итог.textContent = о.message } finally { отправить.disabled = false }
+  } })
+  корень.append(поле, э('label', { textContent: 'Файлы из Вольта: «+ в записку» на открытом файле' }), метки, работа, э('p'), отправить, итог)
+}
+
+async function ответы () {
+  const [записки, ответыДома] = await Promise.all([кл().список(НАСТРОЙКИ.дом, НАСТРОЙКИ.вход, НАСТРОЙКИ.ветка), кл().список(НАСТРОЙКИ.дом, НАСТРОЙКИ.выход, НАСТРОЙКИ.ветка)])
+  const все = пары(записки, ответыДома)
+  if (все.length === 0) корень.append(э('p', { className: 'тихо', textContent: 'Записок ещё нет.' }))
+  for (const п of все) {
+    корень.append(э('div', { className: 'строка', onclick: async () => {
+      if (!п.ответ) return
+      корень.replaceChildren(э('button', { className: 'вторая', textContent: '← к ответам', onclick: () => показать() }))
+      try { корень.append(э('pre', { textContent: await кл().файл(НАСТРОЙКИ.дом, `${НАСТРОЙКИ.выход}/${п.имя}`, НАСТРОЙКИ.ветка) })) } catch (о) { ошибка(о) }
+    } }, э('span', { className: 'имя', textContent: п.имя.replace(/\.md$/, '') }), э('span', { className: 'тихо', textContent: п.ответ ? 'ответ есть →' : 'ждёт компьютер' })))
+  }
+}
+
+function вход () {
+  const поле = э('input', { type: 'password', placeholder: 'личный токен GitHub', value: токен() })
+  корень.append(
+    э('p', { textContent: 'Вход — личный токен GitHub. Он хранится только в этом браузере и ходит только в два твоих закрытых репозитория: Вольт (чтение) и дом бро (записки и ответы).' }),
+    поле, э('p'),
+    э('button', { className: 'кнопка', textContent: 'Сохранить и проверить', onclick: async () => {
+      хранить.положить('бро.токен', поле.value.trim())
+      try { await кл().список(НАСТРОЙКИ.вольт, '', НАСТРОЙКИ.ветка); сост.экран = 'вольт'; показать() } catch (о) { ошибка(о) }
+    } }))
+}
+
+async function показать () {
+  document.querySelectorAll('header button').forEach((к) => к.classList.toggle('да', к.dataset.экран === сост.экран))
+  корень.replaceChildren()
+  if (!токен() && сост.экран !== 'вход') сост.экран = 'вход'
+  try { await ({ вольт, записка, ответы, вход })[сост.экран]() } catch (о) { ошибка(о) }
+}
+document.querySelectorAll('header button').forEach((к) => к.addEventListener('click', () => { сост.экран = к.dataset.экран; if (сост.экран === 'вольт') сост.путь = сост.путь; показать() }))
+показать()
+</script>
+</body>
+</html>
